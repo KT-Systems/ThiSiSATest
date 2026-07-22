@@ -295,45 +295,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t pin)
 {
   /* USER CODE BEGIN HAL_GPIO_EXTI_Callback_1 */
 
-	//	if(vcu.R2DButton.pin == GPIO_Pin) {
-	//		if(vcu.state != OFF) vcu.R2DButton.state = PRESSED;
-	//	}
-	if(vcu.R2DButton.pin == pin){
-		if(vcu.state == R2D && !vcu.R2DStateFirstLoopEnter){
-			vcu.R2DButton.state = PRESSED;
-		}
-		else if(vcu.state == PRECHARGED && !vcu.prechargedStateFirstLoopEnter){
-			vcu.R2DButton.state = PRESSED;
-		}
-
-
-	}
-	else if (vcu.tsActButton.pin == pin) vcu.tsActButton.state = PRESSED;
-
-	else if (vcu.utils1Button.pin == pin && vcu.loadNewScreen == ENTERED){
-		vcu.loadNewScreen = TO_ENTER;
-		vcu.menuPage++;
-		if(vcu.menuPage > MENU_PAGE - 1) vcu.menuPage = MAIN_PAGE;
-		vcu.utils1Button.state = PRESSED;
-	}
-	else if (vcu.utils2Button.pin == pin){
-		if(vcu.state != OFF) return;
-		vcu.utils2Button.state = PRESSED;
-
-//		vcu.loadNewScreen = TO_ENTER;
-		if(vcu.menuPage == MENU_PAGE) {
-			vcu.menuPage = MAIN_PAGE;
-			vcu.loadNewScreen = TO_ENTER;
-		}
-		else vcu.menuPage = MENU_PAGE;
-
-    }
-	else if (vcu.utils3Button.pin == pin && vcu.loadNewScreen == ENTERED){
-		vcu.loadNewScreen = TO_ENTER;
-		vcu.menuPage = vcu.menuPage - 1;
-		if(vcu.menuPage < MAIN_PAGE) vcu.menuPage = MENU_PAGE - 1;
-		vcu.utils3Button.state = PRESSED;
-	}
   /* USER CODE END HAL_GPIO_EXTI_Callback_1 */
   /* Callback when data is available in Network CoProcessor to enable SPI Clock */
   if (pin == SPI_RDY_Pin)
@@ -386,7 +347,8 @@ void HAL_GPIO_EXTI_Falling_Callback(uint16_t pin)
   }
   /* USER CODE BEGIN EXTI_Falling_Callback_End */
 #endif
-    if (pin == SPI_RDY_Pin)
+
+   if (pin == SPI_RDY_Pin)
   {
     spi_on_header_ack();
   }

@@ -596,10 +596,11 @@ https://wiki.st.com/stm32mcu/wiki/Connectivity:Wifi_ST67W6X_HTTP_Server_Applicat
 #include "cJSON.h"
 
 extern FDCAN_HandleTypeDef hfdcan1;
+extern FDCAN_HandleTypeDef hfdcan2;
+extern SD_HandleTypeDef hsd1;
 extern SPI_HandleTypeDef hspi1;
 extern I2C_HandleTypeDef hi2c1;
 extern uint32_t errorHandlerFlag;
-uint8_t jsonCounter = 0;
 
 /* Global variables ----------------------------------------------------------*/
 typedef enum
@@ -658,7 +659,7 @@ typedef struct
 /** Maximum bytes to send in one step */
 #define MAX_BYTES_TO_SEND              4096
 
-extern float flag;
+
 //static volatile PinInfosTypeDef pins_info =
 //{
 //  .btn_state = GPIO_PIN_RESET,
@@ -905,54 +906,25 @@ _err:
 }
 
 #define W6X_MAX_PAYLOAD 500
-//static int32_t http_server_write(int32_t client, const char *buffer, size_t buffer_size)
-//{
-//
-//  size_t remaining = buffer_size;
-//  uint8_t* p = buffer;
-//  do {
-//      size_t chunk = remaining > 450 ? 450 : remaining;
-//      int bytes_sent = W6X_Net_Send(client, p, (int)chunk, 0);
-//      if (bytes_sent < 0) {
-//          // handle EAGAIN vs. fatal error as above
-//          return 1;
-//      }
-//      if (bytes_sent == 0) {
-//          // connection closed
-//          return 1;
-//      }
-//      remaining -= (size_t)bytes_sent;
-//      p += bytes_sent;
-//  } while (remaining > 0);
-//  return 0;
-//}
-
 static int32_t http_server_write(int32_t client, const char *buffer, size_t buffer_size)
 {
-  int32_t bytes_sent = 0;
 
-  /* USER CODE BEGIN http_server_write_1 */
-
-  /* USER CODE END http_server_write_1 */
-
-  LogDebug("[%" PRIi32 "] *****> %s<*****\n", client, buffer);
-
-  do /* Send the data. Can be done in multiple steps. */
-  {
-    bytes_sent = W6X_Net_Send(client, (void *)buffer, buffer_size, 0);
-    if (bytes_sent < 0)
-    {
-      LogError("[%" PRIi32 "] *****> SEND ERROR <*****\n", client);
-      return 1;
-    }
-    buffer_size -= bytes_sent;
-    buffer += bytes_sent;
-  } while (buffer_size > 0);
-
-  /* USER CODE BEGIN http_server_write_last */
-
-  /* USER CODE END http_server_write_last */
-
+  size_t remaining = buffer_size;
+  uint8_t* p = buffer;
+  do {
+      size_t chunk = remaining > 250 ? 250 : remaining;
+      int bytes_sent = W6X_Net_Send(client, p, (int)chunk, 0);
+      if (bytes_sent < 0) {
+          // handle EAGAIN vs. fatal error as above
+          return 1;
+      }
+      if (bytes_sent == 0) {
+          // connection closed
+          return 1;
+      }
+      remaining -= (size_t)bytes_sent;
+      p += bytes_sent;
+  } while (remaining > 0);
   return 0;
 }
 
@@ -993,8 +965,8 @@ static void http_process_response(int32_t client, char *recv_buffer)
   }
   else if(response == DATA_STATE){
 
-//	  	 bms.wifiIsConnected = CONNECTED;
-//	  	 bms.stopDisplayingTimer->Instance->CNT = TIMER_RESET;
+	  	 bms.wifiIsConnected = CONNECTED;
+	  	 bms.stopDisplayingTimer->Instance->CNT = TIMER_RESET;
 
 		  cJSON_Hooks hooks =
 		  {
@@ -1002,229 +974,146 @@ static void http_process_response(int32_t client, char *recv_buffer)
 			.free_fn = vPortFree,
 		  };
 		  cJSON_InitHooks(&hooks);
-//
+
 		  cJSON *root = cJSON_CreateObject();
 				{
-			  // DASHBOARD
-			  	  	    cJSON *mainDataJSON = cJSON_CreateObject();
-		 	 			cJSON_AddItemToObject(root, "main", mainDataJSON);
+					cJSON *segments = cJSON_CreateArray();
+					cJSON_AddItemToObject(root, "segments", segments);
+					//for(uint8_t i = 0; i < 12; i++) for (uint8_t j = 0; j < 12; j++) bms.DischargingCells[i][j] = 0;
 
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "iv", cJSON_CreateNumber(ivt.voltage1));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "mt", cJSON_CreateNumber(inverter.motorTemp));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "ds", cJSON_CreateNumber(dataLogger.speed));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "hct", cJSON_CreateNumber(acu.highestCellTemp));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "ic", cJSON_CreateNumber((float)ivt.current));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "it", cJSON_CreateNumber(inverter.igbtTemp));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "iw", cJSON_CreateNumber(ivt.wattage));
-		 	 			 cJSON_AddItemToObject(mainDataJSON, "b", cJSON_CreateNumber(100.0 * ivt.voltage1 / MAX_PACK_VOLTAGE));
+					for(int i = 0; i < 12; i++){
+						for(int j = 0; j < 12; j++){
+							voltages[i][j] = 10*((uint16_t)(1000*bms.voltages[i][j])) + (uint8_t)bms.DischargingCells[i][j];
+						}
+					}
 
-				  	  	cJSON *elecDataJSON = cJSON_CreateObject();
-			 	 		cJSON_AddItemToObject(root, "elec", elecDataJSON);
+					ivtCurrent = ivt.current;
+					currentCounter = 10000  + 10 * currentResponse;
+					ivtVoltage = 100000  + 10 * currentResponse;
+					wattage =  100000  + 10 * currentResponse;
+					wattageCounter = 100000  + 10 * currentResponse;
 
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "iac", cJSON_CreateNumber(inverter.actualCurrent));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "ir", cJSON_CreateNumber(acu.IMDResistance));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "ic", cJSON_CreateNumber((float)ivt.current));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "icc", cJSON_CreateNumber(ivt.currentCounter));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "iw", cJSON_CreateNumber(ivt.wattage));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "iwc", cJSON_CreateNumber(ivt.wattageCounter));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "mnv", cJSON_CreateNumber(acu.minVoltageCell.val * 10));
-			 	 		 cJSON_AddItemToObject(elecDataJSON, "mxv", cJSON_CreateNumber(acu.maxVoltageCell.val * 10));
+					chargerVoltage = 1000 + currentResponse;
+					chargerCurrent = 1000 + currentResponse;
+					chargerErrors = currentResponse % 32;
 
-			 	 		cJSON *mechDataJSON = cJSON_CreateObject();
-			 	 		cJSON_AddItemToObject(root, "mech", mechDataJSON);
+					ACUFlags = currentResponse % 256;
+					BMSFlags = currentResponse % 256;
+					ACUHumidity = currentResponse % 256;
+					ACUTemperature = currentResponse % 256;
+					imdResistance = currentResponse %256;
+					imdFrequency = currentResponse %100;
 
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "fl", cJSON_CreateNumber(dataLogger.frontLeftWheelRPM));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "fr", cJSON_CreateNumber(dataLogger.frontRightWheelRPM));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "rl", cJSON_CreateNumber(dataLogger.rearLeftWheelRPM));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "rr", cJSON_CreateNumber(dataLogger.rearRightWheelRPM));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "h", cJSON_CreateNumber(0));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "vbp", cJSON_CreateNumber( vcu.brakePressure));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "rpm", cJSON_CreateNumber(inverter.RPMSpeed));
-			 	 		 cJSON_AddItemToObject(mechDataJSON, "s", cJSON_CreateNumber(dataLogger.speed));
+					vicorCurrentIn = currentResponse %256;
+					vicorCurrentOut = currentResponse %256;
+					vicorVoltageIn = currentResponse %256;
+					vicorVoltageOut = currentResponse %256;
+					vicorTemperature = currentResponse %256;
 
+					for(int i = 0; i < 12; i++){
+						cJSON *segment = cJSON_CreateObject();
+						cJSON_AddItemToArray(segments, segment);
+						cJSON_AddItemToObject(segment, "v1", cJSON_CreateNumber(voltages[i][0]));
+						cJSON_AddItemToObject(segment, "v2", cJSON_CreateNumber(voltages[i][1]));
+						cJSON_AddItemToObject(segment, "v3", cJSON_CreateNumber(voltages[i][2]));
+						cJSON_AddItemToObject(segment, "v4", cJSON_CreateNumber(voltages[i][3]));
+						cJSON_AddItemToObject(segment, "v5", cJSON_CreateNumber(voltages[i][4]));
+						cJSON_AddItemToObject(segment, "v6", cJSON_CreateNumber(voltages[i][5]));
+						cJSON_AddItemToObject(segment, "v7", cJSON_CreateNumber(voltages[i][6]));
+						cJSON_AddItemToObject(segment, "v8", cJSON_CreateNumber(voltages[i][7]));
+						cJSON_AddItemToObject(segment, "v9", cJSON_CreateNumber(voltages[i][8]));
+						cJSON_AddItemToObject(segment, "v10", cJSON_CreateNumber(voltages[i][9]));
+						cJSON_AddItemToObject(segment, "v11", cJSON_CreateNumber(voltages[i][10]));
+						cJSON_AddItemToObject(segment, "v12", cJSON_CreateNumber(voltages[i][11]));
+						cJSON_AddItemToObject(segment, "t1", cJSON_CreateNumber((int8_t)bms.temperatures[i][0]));
+						cJSON_AddItemToObject(segment, "t2", cJSON_CreateNumber((int8_t)bms.temperatures[i][1]));
+						cJSON_AddItemToObject(segment, "t3", cJSON_CreateNumber((int8_t)bms.temperatures[i][2]));
+						cJSON_AddItemToObject(segment, "t4", cJSON_CreateNumber((int8_t)bms.temperatures[i][3]));
+						cJSON_AddItemToObject(segment, "t5", cJSON_CreateNumber((int8_t)bms.temperatures[i][4]));
+						cJSON_AddItemToObject(segment, "t6", cJSON_CreateNumber((int8_t)bms.temperatures[i][5]));
+						cJSON_AddItemToObject(segment, "t7", cJSON_CreateNumber((int8_t)bms.temperatures[i][6]));
+						cJSON_AddItemToObject(segment, "t8", cJSON_CreateNumber((int8_t)bms.temperatures[i][7]));
+						cJSON_AddItemToObject(segment, "t9", cJSON_CreateNumber((int8_t)bms.temperatures[i][8]));
+						cJSON_AddItemToObject(segment, "t10", cJSON_CreateNumber((int8_t)bms.temperatures[i][9]));
+						cJSON_AddItemToObject(segment, "ic", cJSON_CreateNumber((int8_t)bms.internalDieTemperature[i]));
+					}
 
-			 	 		cJSON *tempDataJSON = cJSON_CreateObject();
-			 	 		cJSON_AddItemToObject(root, "temp", tempDataJSON);
+					cJSON *ivtJSON = cJSON_CreateArray();
+					cJSON_AddItemToObject(root, "ivt", ivtJSON);
+					cJSON *ivtDatasJSON = cJSON_CreateObject();
+					cJSON_AddItemToArray(ivtJSON, ivtDatasJSON);
 
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "mt", cJSON_CreateNumber(inverter.motorTemp));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "it", cJSON_CreateNumber(inverter.igbtTemp));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "hct", cJSON_CreateNumber(acu.highestCellTemp));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "ct1", cJSON_CreateNumber(dataLogger.coolingThermistors[4]));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "ct2", cJSON_CreateNumber(dataLogger.coolingThermistors[1]));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "ct3", cJSON_CreateNumber(dataLogger.coolingThermistors[3]));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "vt", cJSON_CreateNumber(acu.vicorTemperature));
-			 	 		 cJSON_AddItemToObject(tempDataJSON, "pt", cJSON_CreateNumber(acu.PCBTemperature));
+					cJSON_AddItemToObject(ivtDatasJSON, "i", cJSON_CreateNumber(ivt.hasError));
+					cJSON_AddItemToObject(ivtDatasJSON, "c", cJSON_CreateNumber((int32_t)(1000*ivt.current)));
+					cJSON_AddItemToObject(ivtDatasJSON, "cc", cJSON_CreateNumber(ivt.currentCounter));
+					cJSON_AddItemToObject(ivtDatasJSON, "v", cJSON_CreateNumber((int32_t)(1000*ivt.voltage1)));
+					cJSON_AddItemToObject(ivtDatasJSON, "w", cJSON_CreateNumber((int32_t)(ivt.wattage)));
+					cJSON_AddItemToObject(ivtDatasJSON, "wc", cJSON_CreateNumber(ivt.wattageCounter));
 
-			 	 		cJSON *debugDataJSON = cJSON_CreateObject();
-			 	 		cJSON_AddItemToObject(root, "debug", debugDataJSON);
+					cJSON *chargerJSON = cJSON_CreateArray();
+					cJSON_AddItemToObject(root, "charger", chargerJSON);
+					cJSON *chargerDatasJSON = cJSON_CreateObject();
+					cJSON_AddItemToArray(chargerJSON, chargerDatasJSON);
 
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "ap", cJSON_CreateNumber(acu.AIRPlusIsArmed));
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "am", cJSON_CreateNumber(acu.AIRMinusIsArmed));
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "p", cJSON_CreateNumber( acu.PREIsArmed));
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "ts", cJSON_CreateNumber(acu.TSOver60Volt));
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "i", cJSON_CreateNumber(acu.IMDHasError));
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "a", cJSON_CreateNumber(acu.AMSHasError));
-			 	 		 cJSON_AddItemToObject(debugDataJSON, "st", cJSON_CreateNumber(acu.AIRsAreStuck));
-			 	 		cJSON_AddItemToObject(debugDataJSON, "c", cJSON_CreateNumber(hfdcan1.ErrorCode));
-			 	 		cJSON_AddItemToObject(debugDataJSON, "f", cJSON_CreateNumber(flag));
+					cJSON_AddItemToObject(chargerDatasJSON, "c", cJSON_CreateNumber((int16_t)(10*charger.currentAtCharger)));
+					cJSON_AddItemToObject(chargerDatasJSON, "v", cJSON_CreateNumber((int16_t)(10*charger.voltageAtCharger)));
+					cJSON_AddItemToObject(chargerDatasJSON, "e", cJSON_CreateNumber((charger.statusFlag << 1) | charger.isConnected));
 
+					cJSON *acuJSON = cJSON_CreateArray();
+					uint16_t acuFlags = acu.airPlusAux.state | acu.airPlusSupply.state << 1 |
+							acu.airMinusAux.state << 2| acu.preAux.state << 3 | acu.airMinusSupply.state << 4 |
+							acu.TSOver60Volt.state << 5 | acu.IMDLatchedError.state << 6 | bms.latchedError.state << 7;
+					uint8_t bmsFlags = bms.hasError | bms.latchedError.state << 1 | bms.voltagesHaveError << 2 | bms.tempsHaveError << 3 |
+							ivt.hasError << 4 | bms.isoSPIHasError << 5 | bms.internalVoltagesHaveError << 6;
 
-			 	 		cJSON *devDataJSON = cJSON_CreateObject();
-			 	 		cJSON_AddItemToObject(root, "dev", devDataJSON);
-
-			 	 		 cJSON_AddItemToObject(devDataJSON, "acu", cJSON_CreateNumber(acu.commFlag));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "ivt", cJSON_CreateNumber(ivt.isConnected));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "inv", cJSON_CreateNumber(inverter.isConnected));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "ddl", cJSON_CreateNumber(/*dataLogger.mainIsConnected*/jsonCounter++));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "cbdl", cJSON_CreateNumber(dataLogger.controlBoxIsConnected));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "ae", cJSON_CreateNumber(dataLogger.aeroIsConnected));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "tel", cJSON_CreateNumber(vcu.telemetryIsConnected));
-			 	 		 cJSON_AddItemToObject(devDataJSON, "usr", cJSON_CreateNumber(acu.userIsConnected));
-
-			 	 // SD
-			 	 		 cJSON *ecuDataJSON = cJSON_CreateObject();
-			 	 		 cJSON_AddItemToObject(root, "ecu", ecuDataJSON);
-
-			 	 		 cJSON_AddItemToObject(ecuDataJSON, "a", cJSON_CreateNumber(vcu.pedalSensorFinalValue));
-			 	 		 cJSON_AddItemToObject(ecuDataJSON, "b", cJSON_CreateNumber((int16_t)(vcu.brakePressure * 100)));
-			 	 		 cJSON_AddItemToObject(ecuDataJSON, "mc", cJSON_CreateNumber((uint8_t)map(inverter.motorTemp, 10, 60, 20, 100)));
-			 	 		 cJSON_AddItemToObject(ecuDataJSON, "ic", cJSON_CreateNumber((uint8_t)map(inverter.igbtTemp, 10, 60, 20, 100)));
-			 	 		 cJSON_AddItemToObject(ecuDataJSON, "f", cJSON_CreateNumber(vcu.state));
-
-				 	 	cJSON *cbdlDataJSON = cJSON_CreateObject();
-				 	 	cJSON_AddItemToObject(root, "cbdl", cbdlDataJSON);
-
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "ax", cJSON_CreateNumber(dataLogger.Ax));
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "ay", cJSON_CreateNumber(dataLogger.Ay));
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "az", cJSON_CreateNumber(dataLogger.Az));
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "gx", cJSON_CreateNumber(dataLogger.Gx));
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "gy", cJSON_CreateNumber(dataLogger.Gy));
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "gz", cJSON_CreateNumber(dataLogger.Gz));
-				 	    cJSON_AddItemToObject(cbdlDataJSON, "rr", cJSON_CreateNumber(dataLogger.rearRightWheelRPM));
-				 	 	cJSON_AddItemToObject(cbdlDataJSON, "rl", cJSON_CreateNumber(dataLogger.rearLeftWheelRPM));
-
-				 	 	cJSON *acuDataJSON = cJSON_CreateObject();
-				 	 	cJSON_AddItemToObject(root, "acu", acuDataJSON);
-
-				 	 	cJSON_AddItemToObject(acuDataJSON, "f", cJSON_CreateNumber(acu.commFlag));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "imd_r", cJSON_CreateNumber(acu.IMDResistance));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "t", cJSON_CreateNumber(acu.PCBTemperature));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "h", cJSON_CreateNumber(1 /*humidity*/));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "vt", cJSON_CreateNumber(acu.vicorTemperature));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "maxv_v", cJSON_CreateNumber((int8_t)acu.maxVoltageCell.val));
-				 	    cJSON_AddItemToObject(acuDataJSON, "maxv_i", cJSON_CreateNumber(acu.maxVoltageCell.id));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "minv_v", cJSON_CreateNumber((int8_t)acu.minVoltageCell.val));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "minv_i", cJSON_CreateNumber(acu.minVoltageCell.id));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "maxt_v", cJSON_CreateNumber((int8_t)acu.maxCellTemp.val));
-				 	 	cJSON_AddItemToObject(acuDataJSON, "maxt_i", cJSON_CreateNumber(acu.maxCellTemp.id));
-
-				 	 	cJSON *ivtDataJSON = cJSON_CreateObject();
-				 	 	cJSON_AddItemToObject(root, "ivt", ivtDataJSON);
-
-				 	    cJSON_AddItemToObject(ivtDataJSON, "c", cJSON_CreateNumber(ivt.current));
-				 	 	cJSON_AddItemToObject(ivtDataJSON, "cc", cJSON_CreateNumber(ivt.currentCounter));
-				 	 	cJSON_AddItemToObject(ivtDataJSON, "w", cJSON_CreateNumber(ivt.wattage));
-				 	 	cJSON_AddItemToObject(ivtDataJSON, "wc", cJSON_CreateNumber(ivt.wattageCounter));
-				 	 	cJSON_AddItemToObject(ivtDataJSON, "v", cJSON_CreateNumber(ivt.voltage1));
-				 	 	cJSON_AddItemToObject(ivtDataJSON, "b", cJSON_CreateNumber(ivt.voltage2));
-
-				 	 	cJSON *invDataJSON = cJSON_CreateObject();
-				 	 	cJSON_AddItemToObject(root, "inv", invDataJSON);
-
-				 	    cJSON_AddItemToObject(invDataJSON, "mr", cJSON_CreateNumber(inverter.RPMSpeed));
-				 	 	cJSON_AddItemToObject(invDataJSON, "mt", cJSON_CreateNumber(inverter.motorTemp));
-				 	 	cJSON_AddItemToObject(invDataJSON, "it", cJSON_CreateNumber(inverter.igbtTemp));
-				 	 	cJSON_AddItemToObject(invDataJSON, "c", cJSON_CreateNumber(inverter.actualCurrent));
-				 	 	cJSON_AddItemToObject(invDataJSON, "cq", cJSON_CreateNumber(inverter.actualCurrentQ));
-				 	 	cJSON_AddItemToObject(invDataJSON, "t", cJSON_CreateNumber(inverter.torqueCommand));
+					cJSON_AddItemToObject(root, "acu", acuJSON);
+					cJSON *acuDatasJSON = cJSON_CreateObject();
+					cJSON_AddItemToArray(acuJSON, acuDatasJSON);
+					cJSON_AddItemToObject(acuDatasJSON, "f", cJSON_CreateNumber(acuFlags));
+					cJSON_AddItemToObject(acuDatasJSON, "t", cJSON_CreateNumber((int8_t)acu.PCBTemperature));
+					cJSON_AddItemToObject(acuDatasJSON, "h", cJSON_CreateNumber((int8_t)acu.humidity));
+					cJSON_AddItemToObject(acuDatasJSON, "bf", cJSON_CreateNumber(bmsFlags));
+					cJSON_AddItemToObject(acuDatasJSON, "imd_f", cJSON_CreateNumber((int8_t)acu.IMDPWMFrequency));
+					cJSON_AddItemToObject(acuDatasJSON, "imd_r", cJSON_CreateNumber(acu.IMDResistance));
+					cJSON_AddItemToObject(acuDatasJSON, "q", cJSON_CreateNumber(currentResponse%1000));
+					cJSON_AddItemToObject(acuDatasJSON, "e", cJSON_CreateNumber(errorHandlerFlag));
+					cJSON_AddItemToObject(acuDatasJSON, "c1", cJSON_CreateNumber(hfdcan1.ErrorCode));
+					cJSON_AddItemToObject(acuDatasJSON, "c2", cJSON_CreateNumber(hfdcan2.ErrorCode));
+					cJSON_AddItemToObject(acuDatasJSON, "s", cJSON_CreateNumber(hspi1.ErrorCode));
+					cJSON_AddItemToObject(acuDatasJSON, "sd", cJSON_CreateNumber(hsd1.ErrorCode));
 
 
-		 	 				}
+
+					cJSON *vicorJSON = cJSON_CreateArray();
+					cJSON_AddItemToObject(root, "vicor", vicorJSON);
+					cJSON *vicorDatasJSON = cJSON_CreateObject();
+					cJSON_AddItemToArray(vicorJSON, vicorDatasJSON);
+
+//					vicorCurrentIn = currentResponse %256;
+//
+//					vicorCurrentOut = currentResponse %256;
+//					vicorVoltageIn = currentResponse %256;
+//					vicorVoltageOut = currentResponse %256;
+//					vicorTemperature = currentResponse %256;
+
+					cJSON_AddItemToObject(vicorDatasJSON, "v_in", cJSON_CreateNumber((uint16_t)vicor.voltageIn*10));
+					cJSON_AddItemToObject(vicorDatasJSON, "v_out", cJSON_CreateNumber((uint16_t)vicor.voltageOut*10));
+					cJSON_AddItemToObject(vicorDatasJSON, "i_in", cJSON_CreateNumber((uint16_t)(vicor.currentIn*1000)));
+					cJSON_AddItemToObject(vicorDatasJSON, "i_out", cJSON_CreateNumber((uint16_t)(vicor.currentOut*100)));
+					cJSON_AddItemToObject(vicorDatasJSON, "t", cJSON_CreateNumber(vicor.temperature));
+					cJSON_AddItemToObject(vicorDatasJSON, "w", cJSON_CreateNumber((uint16_t)vicor.wattageOut));
+					cJSON_AddItemToObject(vicorDatasJSON, "e", cJSON_CreateNumber(vicor.i2cErrorCode));
+					cJSON_AddItemToObject(vicorDatasJSON, "i", cJSON_CreateNumber(hi2c1.ErrorCode));
+
+				}
 				char *ret = cJSON_PrintUnformatted(root);
 				cJSON_Delete(root);
 				snprintf(&response_template[strlen(response_template)], sizeof(response_template) - strlen(response_template),
 	             "Content-Length: %" PRIu32 "\r\n\r\n%s", (uint32_t)strlen(ret), ret);
+	    currentResponse++;
 
 	    response_data = response_template;
 	    vPortFree(ret);
-
-//
-//					cJSON *ivtJSON = cJSON_CreateArray();
-//					cJSON_AddItemToObject(root, "ivt", ivtJSON);
-//					cJSON *ivtDatasJSON = cJSON_CreateObject();
-//					cJSON_AddItemToArray(ivtJSON, ivtDatasJSON);
-//
-//					cJSON_AddItemToObject(ivtDatasJSON, "i", cJSON_CreateNumber(ivt.hasError));
-//					cJSON_AddItemToObject(ivtDatasJSON, "c", cJSON_CreateNumber((int32_t)(1000*ivt.current)));
-//					cJSON_AddItemToObject(ivtDatasJSON, "cc", cJSON_CreateNumber(ivt.currentCounter));
-//					cJSON_AddItemToObject(ivtDatasJSON, "v", cJSON_CreateNumber((int32_t)(1000*ivt.voltage1)));
-//					cJSON_AddItemToObject(ivtDatasJSON, "w", cJSON_CreateNumber((int32_t)(ivt.wattage)));
-//					cJSON_AddItemToObject(ivtDatasJSON, "wc", cJSON_CreateNumber(ivt.wattageCounter));
-//
-//					cJSON *chargerJSON = cJSON_CreateArray();
-//					cJSON_AddItemToObject(root, "charger", chargerJSON);
-//					cJSON *chargerDatasJSON = cJSON_CreateObject();
-//					cJSON_AddItemToArray(chargerJSON, chargerDatasJSON);
-//
-//					cJSON_AddItemToObject(chargerDatasJSON, "c", cJSON_CreateNumber((int16_t)(10*charger.currentAtCharger)));
-//					cJSON_AddItemToObject(chargerDatasJSON, "v", cJSON_CreateNumber((int16_t)(10*charger.voltageAtCharger)));
-//					cJSON_AddItemToObject(chargerDatasJSON, "e", cJSON_CreateNumber((charger.statusFlag << 1) | charger.isConnected));
-//
-//					cJSON *acuJSON = cJSON_CreateArray();
-//					uint16_t acuFlags = acu.airPlusAux.state | acu.airPlusSupply.state << 1 |
-//							acu.airMinusAux.state << 2| acu.preAux.state << 3 | acu.airMinusSupply.state << 4 |
-//							acu.TSOver60Volt.state << 5 | acu.IMDLatchedError.state << 6 | bms.latchedError.state << 7;
-//					uint8_t bmsFlags = bms.hasError | bms.latchedError.state << 1 | bms.voltagesHaveError << 2 | bms.tempsHaveError << 3 |
-//							ivt.hasError << 4 | bms.isoSPIHasError << 5 | bms.internalVoltagesHaveError << 6;
-//
-//					cJSON_AddItemToObject(root, "acu", acuJSON);
-//					cJSON *acuDatasJSON = cJSON_CreateObject();
-//					cJSON_AddItemToArray(acuJSON, acuDatasJSON);
-//					cJSON_AddItemToObject(acuDatasJSON, "f", cJSON_CreateNumber(acuFlags));
-//					cJSON_AddItemToObject(acuDatasJSON, "t", cJSON_CreateNumber((int8_t)acu.PCBTemperature));
-//					cJSON_AddItemToObject(acuDatasJSON, "h", cJSON_CreateNumber((int8_t)acu.humidity));
-//					cJSON_AddItemToObject(acuDatasJSON, "bf", cJSON_CreateNumber(bmsFlags));
-//					cJSON_AddItemToObject(acuDatasJSON, "imd_f", cJSON_CreateNumber((int8_t)acu.IMDPWMFrequency));
-//					cJSON_AddItemToObject(acuDatasJSON, "imd_r", cJSON_CreateNumber(acu.IMDResistance));
-//					cJSON_AddItemToObject(acuDatasJSON, "q", cJSON_CreateNumber(currentResponse%1000));
-//					cJSON_AddItemToObject(acuDatasJSON, "e", cJSON_CreateNumber(errorHandlerFlag));
-//					cJSON_AddItemToObject(acuDatasJSON, "c1", cJSON_CreateNumber(hfdcan1.ErrorCode));
-//					cJSON_AddItemToObject(acuDatasJSON, "c2", cJSON_CreateNumber(hfdcan2.ErrorCode));
-//					cJSON_AddItemToObject(acuDatasJSON, "s", cJSON_CreateNumber(hspi1.ErrorCode));
-//					cJSON_AddItemToObject(acuDatasJSON, "sd", cJSON_CreateNumber(hsd1.ErrorCode));
-//
-//
-//
-//					cJSON *vicorJSON = cJSON_CreateArray();
-//					cJSON_AddItemToObject(root, "vicor", vicorJSON);
-//					cJSON *vicorDatasJSON = cJSON_CreateObject();
-//					cJSON_AddItemToArray(vicorJSON, vicorDatasJSON);
-//
-////					vicorCurrentIn = currentResponse %256;
-////
-////					vicorCurrentOut = currentResponse %256;
-////					vicorVoltageIn = currentResponse %256;
-////					vicorVoltageOut = currentResponse %256;
-////					vicorTemperature = currentResponse %256;
-//
-//					cJSON_AddItemToObject(vicorDatasJSON, "v_in", cJSON_CreateNumber((uint16_t)vicor.voltageIn*10));
-//					cJSON_AddItemToObject(vicorDatasJSON, "v_out", cJSON_CreateNumber((uint16_t)vicor.voltageOut*10));
-//					cJSON_AddItemToObject(vicorDatasJSON, "i_in", cJSON_CreateNumber((uint16_t)(vicor.currentIn*1000)));
-//					cJSON_AddItemToObject(vicorDatasJSON, "i_out", cJSON_CreateNumber((uint16_t)(vicor.currentOut*100)));
-//					cJSON_AddItemToObject(vicorDatasJSON, "t", cJSON_CreateNumber(vicor.temperature));
-//					cJSON_AddItemToObject(vicorDatasJSON, "w", cJSON_CreateNumber((uint16_t)vicor.wattageOut));
-//					cJSON_AddItemToObject(vicorDatasJSON, "e", cJSON_CreateNumber(vicor.i2cErrorCode));
-//					cJSON_AddItemToObject(vicorDatasJSON, "i", cJSON_CreateNumber(hi2c1.ErrorCode));
-//
-//				}
-//				char *ret = cJSON_PrintUnformatted(root);
-//				cJSON_Delete(root);
-//				snprintf(&response_template[strlen(response_template)], sizeof(response_template) - strlen(response_template),
-//	             "Content-Length: %" PRIu32 "\r\n\r\n%s", (uint32_t)strlen(ret), ret);
-//	    currentResponse++;
-//
-//	    response_data = response_template;
-//	    vPortFree(ret);
 
 	    if (1 == http_server_write(client, response_data, strlen(response_data)))
 	    {
@@ -1233,85 +1122,89 @@ static void http_process_response(int32_t client, char *recv_buffer)
 
   }
 
-//  else if(response == CHARGE_COMMAND){
-//	  chargePost++;
-//	  static const char HTTP_RESPONSE_CONTINUE[] =
-//	    "HTTP/1.1 100 Continue\r\n\r\n";
-//	  static const char HTTP_RESPONSE_OK[] =
-//	    "HTTP/1.1 200 OK\r\n"
-//	    "Server: U5\r\n"
-//	    "Access-Control-Allow-Origin: *\r\n"
-//	    "Cache-Control: no-cache\r\n"
-//	    "Connection: close\r\n"
-//	    "Content-Type: text/plain; charset=utf-8\r\n"
-//	    "Content-Length: 2\r\n"
-//	    "\r\n"
-//	    "OK";
-//	    if (1 == http_server_write(client, HTTP_RESPONSE_CONTINUE, strlen(HTTP_RESPONSE_CONTINUE)))
-//	    {
-//	      return;
-//	    }
-//
-//	    size_t recv_buffer_len = 200;
-//	    char *recv_buffer = (char *)pvPortMalloc(recv_buffer_len);
-//	    int32_t bytes_received;
-//	    int32_t recv_total_len = 0;
-//	    do
-//	    {
-//	      bytes_received = W6X_Net_Recv(client, (uint8_t *)&recv_buffer[recv_total_len], recv_buffer_len, 0);
-//	      if (bytes_received < 0) /* No data received or error */
-//	      {
-//	        break;
-//	      }
-//
-//	      /* Case where we have receive less than the buffer allocated */
-//	      if (bytes_received < recv_buffer_len)
-//	      {
-//	        recv_total_len += bytes_received;
-//	        break;
-//	      }
-//
-//	      recv_total_len += bytes_received;
-//	      recv_buffer_len -= bytes_received;
-//	    } while ((bytes_received != 0) && (recv_buffer_len > 0));
-//	    if (1 == http_server_write(client, HTTP_RESPONSE_OK, strlen(HTTP_RESPONSE_OK)))
-//	    {
-//	      return;
-//	    }
-//
-//	    cJSON *root = NULL;
-//	    cJSON *currentInput = NULL;
-//	    cJSON *chargingStateInput = NULL;
-//	    cJSON *passwordInput = NULL;
-//	    cJSON *balancingStateInput = NULL;
-//	    cJSON_Hooks hooks =
-//	    {
-//	      .malloc_fn = pvPortMalloc,
-//	      .free_fn = vPortFree,
-//	    };
-//	    cJSON_InitHooks(&hooks);
-//	    char *json_start = strstr(recv_buffer, "{");
-//
-//	    root = cJSON_Parse((const char *)json_start);
-//
-//	    passwordInput = cJSON_GetObjectItemCaseSensitive(root, "pass");
-//	    currentInput = cJSON_GetObjectItemCaseSensitive(root, "current");
-//	    chargingStateInput = cJSON_GetObjectItemCaseSensitive(root, "cs");
-//	    balancingStateInput = cJSON_GetObjectItemCaseSensitive(root, "bs");
-//	    vPortFree(recv_buffer);//Xreiazetai
-//
-//	    if(passwordInput->valueint == 69420){
-//
-////	    	charger.wantedCurrentTimes10 = currentInput->valueint;
-////	    	charger.wantedOff = !(chargingStateInput->valueint);
-////	    	bms.cellBalancingIsWanted = balancingStateInput->valueint;
-//	    //	HAL_GPIO_TogglePin(LED_CAN_1_GPIO_Port, LED_CAN_1_Pin);
-//
-//	    }
-//	    cJSON_Delete(root);
-//
-//  }
+  else if(response == CHARGE_COMMAND){
+	  chargePost++;
+	  static const char HTTP_RESPONSE_CONTINUE[] =
+	    "HTTP/1.1 100 Continue\r\n\r\n";
+	  static const char HTTP_RESPONSE_OK[] =
+	    "HTTP/1.1 200 OK\r\n"
+	    "Server: U5\r\n"
+	    "Access-Control-Allow-Origin: *\r\n"
+	    "Cache-Control: no-cache\r\n"
+	    "Connection: close\r\n"
+	    "Content-Type: text/plain; charset=utf-8\r\n"
+	    "Content-Length: 2\r\n"
+	    "\r\n"
+	    "OK";
+	    if (1 == http_server_write(client, HTTP_RESPONSE_CONTINUE, strlen(HTTP_RESPONSE_CONTINUE)))
+	    {
+	      return;
+	    }
 
+	    size_t recv_buffer_len = 200;
+	    char *recv_buffer = (char *)pvPortMalloc(recv_buffer_len);
+	    int32_t bytes_received;
+	    int32_t recv_total_len = 0;
+	    do
+	    {
+	      bytes_received = W6X_Net_Recv(client, (uint8_t *)&recv_buffer[recv_total_len], recv_buffer_len, 0);
+	      if (bytes_received < 0) /* No data received or error */
+	      {
+	        break;
+	      }
+
+	      /* Case where we have receive less than the buffer allocated */
+	      if (bytes_received < recv_buffer_len)
+	      {
+	        recv_total_len += bytes_received;
+	        break;
+	      }
+
+	      recv_total_len += bytes_received;
+	      recv_buffer_len -= bytes_received;
+	    } while ((bytes_received != 0) && (recv_buffer_len > 0));
+	    if (1 == http_server_write(client, HTTP_RESPONSE_OK, strlen(HTTP_RESPONSE_OK)))
+	    {
+	      return;
+	    }
+
+	    cJSON *root = NULL;
+	    cJSON *currentInput = NULL;
+	    cJSON *chargingStateInput = NULL;
+	    cJSON *passwordInput = NULL;
+	    cJSON *balancingStateInput = NULL;
+	    cJSON_Hooks hooks =
+	    {
+	      .malloc_fn = pvPortMalloc,
+	      .free_fn = vPortFree,
+	    };
+	    cJSON_InitHooks(&hooks);
+	    char *json_start = strstr(recv_buffer, "{");
+
+	    root = cJSON_Parse((const char *)json_start);
+
+	    passwordInput = cJSON_GetObjectItemCaseSensitive(root, "pass");
+	    currentInput = cJSON_GetObjectItemCaseSensitive(root, "current");
+	    chargingStateInput = cJSON_GetObjectItemCaseSensitive(root, "cs");
+	    balancingStateInput = cJSON_GetObjectItemCaseSensitive(root, "bs");
+	    vPortFree(recv_buffer);//Xreiazetai
+
+	    if(passwordInput->valueint == 69420){
+
+	    	charger.wantedCurrentTimes10 = currentInput->valueint;
+	    	charger.wantedOff = !(chargingStateInput->valueint);
+	    	bms.cellBalancingIsWanted = balancingStateInput->valueint;
+	    	HAL_GPIO_TogglePin(LED_CAN_1_GPIO_Port, LED_CAN_1_Pin);
+
+	    }
+	    cJSON_Delete(root);
+
+  }
 }
+
+
+
+
+
 
 /* USER CODE END PFD */

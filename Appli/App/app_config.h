@@ -68,10 +68,10 @@ typedef enum
 #define LOG_OUTPUT_MODE             LOG_OUTPUT_ITM
 
 /** SSID of the Soft-AP */
-#define WIFI_SAP_SSID               "VCU INTERFACE"
+#define WIFI_SAP_SSID               "ACU BMS"
 
 /** Password of the Soft-AP */
-#define WIFI_SAP_PASSWORD           "einaikwdikos"
+#define WIFI_SAP_PASSWORD           "poutsakoutsa7"
 
 /** Channel of the Soft-AP */
 #define WIFI_SAP_CHANNEL            1
@@ -89,7 +89,7 @@ typedef enum
   * Enable/Disable MCU Debugger pins (dbg serial wires)
   * @note  by HW serial wires are ON by default, need to put them OFF to save power
   */
-#define DEBUGGER_ENABLED            1
+#define DEBUGGER_ENABLED            0
 
 /* USER CODE BEGIN EC */
 
